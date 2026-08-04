@@ -49,7 +49,7 @@ def main():
         result = generate_psych_quote(theme)
         
         print("-" * 60)
-        print(result)
+        print(result) 
         print("-" * 60)
 
 if __name__ == "__main__":
