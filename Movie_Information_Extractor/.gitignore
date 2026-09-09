@@ -1,0 +1,70 @@
+# =====================================================
+# Movie Information Extractor
+# Professional .gitignore
+# =====================================================
+
+# ---------- Environment ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Virtual Environment ----------
+.venv/
+venv/
+ENV/
+env/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- Testing ----------
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---------- Type Checking ----------
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# ---------- Streamlit ----------
+.streamlit/secrets.toml
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+
+# ---------- Operating System ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Logs ----------
+*.log
+
+# ---------- Local LLM Models ----------
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# ---------- Hugging Face Cache ----------
+cache/
+.huggingface/
+
+# ---------- Build ----------
+build/
+dist/
+*.egg-info/
+
+# ---------- Temporary ----------
+tmp/
+temp/
