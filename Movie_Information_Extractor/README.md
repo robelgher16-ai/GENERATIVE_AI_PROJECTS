@@ -110,7 +110,7 @@ The cloud-powered version uses Google Gemini through LangChain for more accurate
 
 ### 🎬 3. Extracted Movie Information
 
-![Movie Result](screenshots/movie-result.png)
+![Movie Result](screenshots/local-result.png)
 
 After processing, the application displays:
 
@@ -128,17 +128,17 @@ using a modern Streamlit card layout.
 
 ### 📄 4. Structured JSON Output
 
-![JSON Output](screenshots/json-output.png)
+![JSON Output](screenshots/raw-json.png)
 
 The validated Pydantic output is displayed as formatted JSON and can be downloaded with one click.
 
 ---
 
-### ⚠️ 5. Error Handling
+### ☁️ 5. Gemini API — Extracted Result
 
-![Error Screen](screenshots/error-screen.png)
+![API Result](screenshots/api-result.png)
 
-If the language model returns invalid or malformed JSON, the application catches the error and shows a user-friendly validation message instead of crashing.
+The Gemini API version displays the extracted movie information using the same modern Streamlit card layout as the local version.
 
 ---
 
@@ -181,8 +181,8 @@ If the language model returns invalid or malformed JSON, the application catches
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/RobelGebregziabher/movie-information-extractor.git
-cd movie-information-extractor
+git clone https://github.com/robelgher16-ai/GENERATIVE_AI_PROJECTS.git
+cd GENERATIVE_AI_PROJECTS
 ```
 
 ### 2. Create a Virtual Environment with UV
@@ -519,10 +519,10 @@ movie-information-extractor/
 │
 ├── screenshots/
 │   ├── local-home.png
+│   ├── local-result.png
 │   ├── api-home.png
-│   ├── movie-result.png
-│   ├── json-output.png
-│   └── error-screen.png
+│   ├── api-result.png
+│   └── raw-json.png
 │
 ├── tests/
 │   ├── __init__.py
