@@ -1,8 +1,25 @@
 # AI Resume & Cover Letter Generator
 
-An AI-powered application that helps job seekers create **job-tailored resumes, cover letters, skills matching, and improvement suggestions** based on their existing resume and a target job description.
+An AI-powered application that helps job seekers create **job-tailored resumes, personalized cover letters, skills matching, and improvement suggestions** based on their existing resume and a target job description.
 
-The project uses **Google Gemini**, **LangChain**, **FastAPI**, and **Streamlit** to provide an AI-powered application workflow.
+The project uses **Google Gemini, LangChain, FastAPI, and Streamlit** to provide an end-to-end AI-powered job application workflow.
+
+## Live Application
+
+### Streamlit Frontend
+
+**Live Application:**
+https://ai-resume-cover-letter-generator-robel.streamlit.app/
+
+### FastAPI Backend
+
+**Live API:**
+https://ai-resume-cover-letter-generator-0mw9.onrender.com
+
+**Interactive Swagger API Documentation:**
+https://ai-resume-cover-letter-generator-0mw9.onrender.com/docs
+
+---
 
 ## Features
 
@@ -11,11 +28,14 @@ The project uses **Google Gemini**, **LangChain**, **FastAPI**, and **Streamlit*
 - Compare resume skills with job requirements
 - Identify missing or relevant skills
 - Suggest areas for improvement
-- AI-powered application analysis
+- AI-powered job application analysis
 - FastAPI backend
 - Streamlit interactive frontend
+- Google Gemini integration
 - Environment-variable based API key management
 - PDF generation support
+
+---
 
 ## Project Architecture
 
@@ -30,9 +50,12 @@ AI_Resume_and_Cover_Letter_Generator/
 │
 ├── app.py
 ├── main.py
+├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
+
+---
 
 ## Technologies
 
@@ -45,22 +68,24 @@ AI_Resume_and_Cover_Letter_Generator/
 - python-dotenv
 - Uvicorn
 
+---
+
 ## How It Works
 
 ```text
 Resume + Job Description
           │
           ▼
-     Streamlit UI
+    Streamlit UI
           │
           ▼
       FastAPI API
           │
           ▼
-    LangChain + Gemini
+   LangChain + Gemini
           │
           ▼
-  AI Application Analysis
+ AI Application Analysis
           │
           ├── Tailored Resume
           ├── Cover Letter
@@ -68,21 +93,23 @@ Resume + Job Description
           └── Improvement Areas
 ```
 
+---
+
 ## Installation
 
-### 1. Clone the repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/robelgher16-ai/GENERATIVE_AI_PROJECTS.git
 ```
 
-### 2. Open the project
+### 2. Open the Project
 
 ```bash
 cd GENERATIVE_AI_PROJECTS/AI_Resume_and_Cover_Letter_Generator
 ```
 
-### 3. Create a virtual environment
+### 3. Create a Virtual Environment
 
 ```bash
 python -m venv .venv
@@ -94,23 +121,29 @@ Activate it on Windows:
 .venv\Scripts\activate
 ```
 
-### 4. Install dependencies
+### 4. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
+
+---
 
 ## Environment Variables
 
 Create a `.env` file in the project directory:
 
 ```env
-GOOGLE_API_KEY=your_google_api_key
+GEMINI_API_KEY=your_google_gemini_api_key
 ```
 
-**Never commit your `.env` file or API credentials to GitHub.**
+> **Never commit your `.env` file or API credentials to GitHub.**
 
 The project `.gitignore` is configured to keep sensitive credentials out of version control.
+
+For deployed applications, configure the API key using the platform's environment-variable or secret-management system.
+
+---
 
 ## Running the FastAPI Backend
 
@@ -132,6 +165,8 @@ FastAPI automatically provides interactive API documentation at:
 http://127.0.0.1:8000/docs
 ```
 
+---
+
 ## Running the Streamlit Frontend
 
 In another terminal:
@@ -146,43 +181,70 @@ The application will normally open at:
 http://localhost:8501
 ```
 
+---
+
 ## API
 
-The backend provides endpoints for AI-powered job application generation and analysis.
+The FastAPI backend provides endpoints for AI-powered job application generation and analysis.
 
-Example API workflow:
+### Generate Application Materials
 
 ```text
-POST /ask
+POST /generate
 ```
 
-The API receives application-related information and uses Gemini to generate the requested output.
+The endpoint receives a resume and job description and uses Gemini to generate job-tailored application materials.
 
-Interactive API documentation is available through FastAPI's Swagger UI.
+Example request:
+
+```json
+{
+  "resume": "I am a 4th-year Information Technology student with experience in Python, Machine Learning, Deep Learning, Generative AI, FastAPI, Streamlit, and GitHub.",
+  "job_description": "We are looking for an AI/ML Engineering Intern with knowledge of Python, machine learning, deep learning, and generative AI."
+}
+```
+
+### Interactive API Documentation
+
+The complete API documentation is available through the deployed Swagger UI:
+
+https://ai-resume-cover-letter-generator-0mw9.onrender.com/docs
+
+---
 
 ## Deployment
 
-The project can be deployed using:
+### Backend — Render
 
-### Backend
+The FastAPI backend is deployed on Render.
 
-**Render**
+**Live Backend:**
 
-Deploy the FastAPI backend and configure the required environment variables in the Render dashboard.
+https://ai-resume-cover-letter-generator-0mw9.onrender.com
 
-Example start command:
+**Swagger Documentation:**
+
+https://ai-resume-cover-letter-generator-0mw9.onrender.com/docs
+
+Start command:
 
 ```bash
 uvicorn api.main:app --host 0.0.0.0 --port $PORT
 ```
 
-### Frontend
+The `GEMINI_API_KEY` is configured as an environment variable on the deployment platform.
 
-**Streamlit Community Cloud**
+### Frontend — Streamlit Community Cloud
 
-Deploy `app.py` and configure the required secrets through the Streamlit settings.
+The Streamlit frontend is deployed on Streamlit Community Cloud.
 
-Do not upload API keys directly into the repository.
+**Live Application:**
+
+https://ai-resume-cover-letter-generator-robel.streamlit.app/
+
+The frontend communicates with the deployed FastAPI backend.
+
+---
 
 ## Security
 
@@ -195,7 +257,9 @@ credentials.json
 __pycache__/
 ```
 
-API keys should always be stored using environment variables or the secret-management systems provided by the deployment platform.
+API keys should always be stored using environment variables or the secret-management systems provided by deployment platforms.
+
+---
 
 ## Future Improvements
 
@@ -209,6 +273,10 @@ API keys should always be stored using environment variables or the secret-manag
 - Improved application tracking
 - User authentication
 - Application history
+- More advanced job matching
+- Resume-to-job compatibility scoring
+
+---
 
 ## Author
 
@@ -216,7 +284,8 @@ API keys should always be stored using environment variables or the secret-manag
 
 Information Technology Student | AI Engineer | Machine Learning & Generative AI
 
-GitHub: https://github.com/robelgher16-ai
+GitHub:
+https://github.com/robelgher16-ai
 
 ---
 
