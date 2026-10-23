@@ -4,7 +4,7 @@ uvicorn
 streamlit
 python-dotenv
 google-genai
-yt-dlp
+yt-dlp>=2026.8.19
 opencv-python-headless
 pytesseract
 Pillow
