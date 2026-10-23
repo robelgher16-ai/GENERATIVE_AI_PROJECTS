@@ -1,11 +1,10 @@
-
-fastapi
-uvicorn
 streamlit
-python-dotenv
-google-genai
+faster-whisper>=1.2.1,<2.0.0
 yt-dlp>=2026.8.19
 opencv-python-headless
 pytesseract
 Pillow
-faster-whisper>=1.2.1,<2.0.0
+google-genai
+python-dotenv
+fastapi
+uvicorn
