@@ -1,6 +1,7 @@
+
 streamlit
 faster-whisper>=1.2.1,<2.0.0
-yt-dlp>=2026.10.21
+yt-dlp
 opencv-python-headless
 pytesseract
 Pillow
@@ -8,3 +9,10 @@ google-genai
 python-dotenv
 fastapi
 uvicorn
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-chroma
+chromadb
+fastembed
