@@ -21,5 +21,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8501
-
-CMD ["sh", "-c", "streamlit run api.py --server.address=0.0.0.0 --server.port=${PORT:-8501}"]
+CMD ["sh", "-c", "streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-8501}"]
