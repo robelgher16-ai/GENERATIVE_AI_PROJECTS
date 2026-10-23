@@ -1,0 +1,22 @@
+﻿.env
+.env.*
+!.env.example
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+
+# Downloaded media
+downloads/
+
+# Generated meeting data and vector database
+outputs/
+
+# Local Python environments
+venv/
+.venv/
+
+# Tesseract language data (install separately if needed)
+tessdata/*.traineddata
