@@ -1,12 +1,25 @@
+
 """
-Thin Streamlit frontend that talks to the FastAPI backend.
-Run locally:  API_URL=http://localhost:8000 streamlit run streamlit_app.py
-On Streamlit Cloud set secrets:  API_URL = "https://your-api.onrender.com"   APP_API_KEY = "..."
+Ethiopian AI Meeting Assistant — Streamlit Frontend
+
+Local:
+    streamlit run frontend/streamlit_app.py
+
+Streamlit Cloud secrets:
+    API_URL = "https://ethiopian-ai-meeting-assistant-api.onrender.com"
+    APP_API_KEY = "your_app_api_key"
 """
+
 import os
 import time
+
 import requests
 import streamlit as st
+
+
+# --------------------------------------------------
+# Configuration
+# --------------------------------------------------
 
 def _secret(name, default=""):
     try:
@@ -14,33 +27,109 @@ def _secret(name, default=""):
     except Exception:
         return os.environ.get(name, default)
 
-API_URL = _secret("API_URL", "http://localhost:8000").rstrip("/")
-HEADERS = {"X-API-Key": _secret("APP_API_KEY")} if _secret("APP_API_KEY") else {}
 
-st.set_page_config(page_title="Ethiopian AI Meeting Assistant", page_icon="🎙️", layout="wide")
-st.markdown("<style>@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;600&display=swap');"
-            "html,body,[class*='css']{font-family:'Noto Sans Ethiopic',sans-serif}</style>", unsafe_allow_html=True)
+API_URL = _secret(
+    "API_URL",
+    "http://localhost:8000",
+).rstrip("/")
+
+APP_API_KEY = _secret("APP_API_KEY")
+
+HEADERS = (
+    {"X-API-Key": APP_API_KEY}
+    if APP_API_KEY
+    else {}
+)
+
+st.set_page_config(
+    page_title="Ethiopian AI Meeting Assistant",
+    page_icon="🎙️",
+    layout="wide",
+)
+
+st.markdown(
+    "<style>"
+    "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;600&display=swap');"
+    "html,body,[class*='css']{font-family:'Noto Sans Ethiopic',sans-serif}"
+    "</style>",
+    unsafe_allow_html=True,
+)
+
 st.title("🎙️ Ethiopian AI Meeting Assistant")
-st.caption("Meeting video/audio → English + አማርኛ reports → chat with the meeting")
+st.caption(
+    "Meeting audio/video → English + አማርኛ reports → chat with the meeting"
+)
 
-def api(method, path, **kw):
-    return requests.request(method, API_URL + path, headers=HEADERS, timeout=kw.pop("timeout", 120), **kw)
 
-# ---- sidebar: backend status
+# --------------------------------------------------
+# Backend request helper
+# --------------------------------------------------
+
+def api(method, path, **kwargs):
+    timeout = kwargs.pop("timeout", 120)
+
+    return requests.request(
+        method,
+        f"{API_URL}{path}",
+        headers=HEADERS,
+        timeout=timeout,
+        **kwargs,
+    )
+
+
+# --------------------------------------------------
+# Sidebar: backend status
+# --------------------------------------------------
+
 with st.sidebar:
     st.header("Backend")
+
     try:
-        h = api("GET", "/health", timeout=60).json()   # long timeout: free Render servers need ~50s to wake up
+        response = api("GET", "/health", timeout=60)
+        response.raise_for_status()
+        health = response.json()
+
         st.success("API online")
-        st.write("Gemini key:", "✅" if h["gemini_key_set"] else "❌")
-        st.write("Busy:", "⏳ yes" if h["busy"] else "no")
-        st.write("Knowledge base:", "✅" if h["knowledge_base_ready"] else "○ not built")
-    except Exception as e:
+
+        st.write(
+            "Gemini key:",
+            "✅" if health.get("gemini_key_set") else "❌",
+        )
+
+        st.write(
+            "Busy:",
+            "⏳ yes" if health.get("busy") else "no",
+        )
+
+        st.write(
+            "Knowledge base:",
+            "✅" if health.get("knowledge_base_ready") else "○ not built",
+        )
+
+    except Exception as exc:
         st.error(f"Cannot reach API at {API_URL}")
-        st.caption(str(e)[:150])
+        st.caption(str(exc)[:200])
         st.stop()
 
-tab_run, tab_en, tab_am, tab_chat = st.tabs(["🚀 Analyze", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"])
+
+# --------------------------------------------------
+# Main tabs
+# --------------------------------------------------
+
+tab_run, tab_en, tab_am, tab_chat = st.tabs(
+    [
+        "🚀 Analyze",
+        "🇬🇧 English Report",
+        "🇪🇹 የአማርኛ ሪፖርት",
+        "💬 Chat / ውይይት",
+    ]
+)
+
+
+# --------------------------------------------------
+# Analyze: upload file only
+# YouTube link processing is intentionally disabled.
+# --------------------------------------------------
 
 with tab_run:
     mode = st.radio(
@@ -48,126 +137,258 @@ with tab_run:
         ["Upload file", "YouTube / video link"],
         index=0,
         horizontal=True,
+        key="input_mode",
     )
-
-    skip_visual = st.checkbox(
-        "Skip slide-text (OCR) step — faster",
-        value=False,
-    )
-
-    job = None
 
     if mode == "YouTube / video link":
         st.info(
-            "YouTube link processing has been temporarily deactivated "
-            "due to YouTube access restrictions. Please upload your "
-            "meeting audio or video file instead."
+            "YouTube link processing is temporarily disabled due to "
+            "YouTube access restrictions. Please upload your meeting "
+            "audio or video file instead."
         )
 
     else:
-        f = st.file_uploader(
+        skip_visual = st.checkbox(
+            "Skip slide-text (OCR) step — faster",
+            value=False,
+            key="skip_visual_ocr",
+        )
+
+        uploaded_file = st.file_uploader(
             "Meeting file",
-            type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"],
+            type=[
+                "mp4",
+                "mov",
+                "mkv",
+                "avi",
+                "webm",
+                "mp3",
+                "wav",
+                "m4a",
+            ],
+            key="meeting_file_uploader",
         )
 
-        if st.button("Start analysis", type="primary") and f:
-            r = api(
-                "POST",
-                "/analyze/upload",
-                files={"file": (f.name, f.getvalue())},
-                data={"skip_visual": str(skip_visual).lower()},
-                timeout=600,
-            )
-            job = r.json() if r.ok else st.error(r.text)
+        if st.button("Start analysis", type="primary", key="start_upload_analysis"):
+            if uploaded_file is None:
+                st.warning("Please upload a meeting audio or video file first.")
 
-    if job and "job_id" in job:
-        box = st.empty()
+            else:
+                try:
+                    with st.spinner("Submitting your file..."):
+                        response = api(
+                            "POST",
+                            "/analyze/upload",
+                            files={
+                                "file": (
+                                    uploaded_file.name,
+                                    uploaded_file.getvalue(),
+                                )
+                            },
+                            data={
+                                "skip_visual": str(skip_visual).lower()
+                            },
+                            timeout=600,
+                        )
 
-        while True:
-            j = api("GET", f"/jobs/{job['job_id']}").json()
-            box.info(f"**{j['status']}** — {j['step']}")
+                    if not response.ok:
+                        st.error(
+                            f"Could not start analysis "
+                            f"({response.status_code}): {response.text[:1000]}"
+                        )
 
-            if j["status"] == "done":
-                box.success("Finished! Open the report tabs.")
-                break
+                    else:
+                        job = response.json()
+                        job_id = job.get("job_id")
 
-            if j["status"] == "failed":
-                box.error(j.get("error"))
-                break
+                        if not job_id:
+                            st.error(
+                                "The API response did not contain a job ID."
+                            )
 
-            time.sleep(8)
+                        else:
+                            status_box = st.empty()
+
+                            while True:
+                                try:
+                                    job_response = api(
+                                        "GET",
+                                        f"/jobs/{job_id}",
+                                        timeout=120,
+                                    )
+                                    job_response.raise_for_status()
+                                    job_status = job_response.json()
+
+                                except requests.RequestException as exc:
+                                    status_box.error(
+                                        f"Could not check analysis progress: {exc}"
+                                    )
+                                    break
+
+                                status = job_status.get("status", "unknown")
+                                step = job_status.get("step", "Processing")
+
+                                status_box.info(
+                                    f"**{status}** — {step}"
+                                )
+
+                                if status == "done":
+                                    status_box.success(
+                                        "Analysis finished! Open the English "
+                                        "Report and Amharic Report tabs."
+                                    )
+                                    break
+
+                                if status == "failed":
+                                    status_box.error(
+                                        job_status.get(
+                                            "error",
+                                            "Analysis failed. Please check the backend logs.",
+                                        )
+                                    )
+                                    break
+
+                                time.sleep(8)
+
+                except requests.RequestException as exc:
+                    st.error(f"Request failed: {exc}")
 
 
-    job = None
-    if mode == "YouTube / video link":
-        url = st.text_input("Link", placeholder="https://www.youtube.com/watch?v=...")
-        if st.button("Start analysis", type="primary") and url:
-            r = api("POST", "/analyze/url", json={"url": url, "skip_visual": skip_visual})
-            job = r.json() if r.ok else st.error(r.text)
-    else:
-        f = st.file_uploader("Meeting file", type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
-        if st.button("Start analysis", type="primary") and f:
-            r = api("POST", "/analyze/upload", files={"file": (f.name, f.getvalue())},
-                    data={"skip_visual": str(skip_visual).lower()}, timeout=600)
-            job = r.json() if r.ok else st.error(r.text)
-    if job and "job_id" in job:
-        box = st.empty()
-        while True:
-            j = api("GET", f"/jobs/{job['job_id']}").json()
-            box.info(f"**{j['status']}** — {j['step']}")
-            if j["status"] == "done":
-                box.success("Finished! Open the report tabs."); break
-            if j["status"] == "failed":
-                box.error(j.get("error")); break
-            time.sleep(8)
+# --------------------------------------------------
+# Report display
+# --------------------------------------------------
 
 def show_report(path):
-    r = api("GET", path)
-    if r.ok:
-        md = r.json()["markdown"]
-        st.download_button("⬇️ Download (.md)", md, file_name=path.split("/")[-1] + ".md")
-        st.markdown(md)
-    else:
-        st.info("No report yet. Run an analysis first.")
+    try:
+        response = api("GET", path, timeout=120)
 
-with tab_en: show_report("/reports/en")
-with tab_am: show_report("/reports/amh")
+        if response.ok:
+            report_data = response.json()
+            markdown_report = report_data.get("markdown", "")
+
+            if not markdown_report:
+                st.info("The report is empty.")
+                return
+
+            st.download_button(
+                "⬇️ Download (.md)",
+                data=markdown_report,
+                file_name=f"{path.split('/')[-1]}.md",
+                mime="text/markdown",
+                key=f"download_{path.replace('/', '_')}",
+            )
+
+            st.markdown(markdown_report)
+
+        else:
+            st.info(
+                "No report available yet. Run an analysis first."
+            )
+
+    except requests.RequestException as exc:
+        st.error(f"Could not load the report: {exc}")
+
+
+with tab_en:
+    show_report("/reports/en")
+
+with tab_am:
+    show_report("/reports/amh")
+
+
+# --------------------------------------------------
+# Chat in English or Amharic
+# --------------------------------------------------
 
 with tab_chat:
-    st.session_state.setdefault("msgs", [])
+    if "msgs" not in st.session_state:
+        st.session_state["msgs"] = []
 
-    top_l, top_r = st.columns([5, 1])
-    top_l.caption("Ask in English or Amharic. Answers come only from this meeting.")
-    if top_r.button("🧹 Clear", use_container_width=True):
+    left_column, right_column = st.columns([5, 1])
+
+    left_column.caption(
+        "Ask in English or Amharic. Answers come from the meeting."
+    )
+
+    if right_column.button(
+        "🧹 Clear",
+        use_container_width=True,
+        key="clear_chat",
+    ):
         st.session_state["msgs"] = []
         st.rerun()
 
-    # 1) the message window is created FIRST  -> everything (old + current) appears inside it, above the input
+    # Display messages in a scrollable window.
     chat_box = st.container(height=520, border=True)
 
-    # 2) the input box is created AFTER the window -> it is always underneath all messages
-    q = st.chat_input("Ask a question / ጥያቄዎን ይጠይቁ...")
+    # Keep the chat input below the message window.
+    question = st.chat_input(
+        "Ask a question / ጥያቄዎን ይጠይቁ...",
+        key="meeting_chat_input",
+    )
 
-    def render(m):
-        with st.chat_message(m["role"], avatar="🧑" if m["role"] == "user" else "🤖"):
-            st.markdown(m["content"])
-            if m.get("sources"):
+    def render_message(message):
+        with st.chat_message(
+            message["role"],
+            avatar="🧑" if message["role"] == "user" else "🤖",
+        ):
+            st.markdown(message["content"])
+
+            sources = message.get("sources", [])
+
+            if sources:
                 with st.expander("📚 Sources"):
-                    for i, sc in enumerate(m["sources"], 1):
-                        st.caption(f"{i}. {sc['source']}: {sc['text']}")
+                    for index, source in enumerate(sources, 1):
+                        st.caption(
+                            f"{index}. {source.get('source', 'Source')}: "
+                            f"{source.get('text', '')}"
+                        )
+
+    if question:
+        st.session_state["msgs"].append(
+            {
+                "role": "user",
+                "content": question,
+            }
+        )
+
+        try:
+            with st.spinner("Thinking... / እያሰብኩ ነው..."):
+                response = api(
+                    "POST",
+                    "/chat",
+                    json={"question": question},
+                    timeout=180,
+                )
+
+            if response.ok:
+                answer_data = response.json()
+
+                answer = answer_data.get(
+                    "answer",
+                    "The API did not return an answer.",
+                )
+                sources = answer_data.get("sources", [])
+
+            else:
+                answer = (
+                    f"❌ Chat request failed "
+                    f"({response.status_code}): {response.text[:1000]}"
+                )
+                sources = []
+
+        except requests.RequestException as exc:
+            answer = f"❌ Could not connect to the API: {exc}"
+            sources = []
+
+        st.session_state["msgs"].append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "sources": sources,
+            }
+        )
 
     with chat_box:
-        for m in st.session_state["msgs"]:
-            render(m)
-        if q:
-            user_msg = {"role": "user", "content": q}
-            st.session_state["msgs"].append(user_msg)
-            render(user_msg)                     # your question shows immediately, inside the window
-            with st.chat_message("assistant", avatar="🤖"):
-                with st.spinner("Thinking... / እያሰብኩ ነው..."):
-                    r = api("POST", "/chat", json={"question": q})
-                    ans = r.json()["answer"] if r.ok else f"❌ {r.text}"
-                    srcs = r.json()["sources"] if r.ok else []
-            bot_msg = {"role": "assistant", "content": ans, "sources": srcs}
-            st.session_state["msgs"].append(bot_msg)
-            render(bot_msg)
+        for message in st.session_state["msgs"]:
+            render_message(message)
