@@ -51,6 +51,7 @@ def download_youtube_audio(url: str) -> str:
 
     ydl_opts = {
         "format": "bestaudio/best",
+        "extractor_args": {'youtube': {'player_client': ['web', 'ios']}},
         "outtmpl": output_template,
         "noplaylist": True,
         "quiet": True,
