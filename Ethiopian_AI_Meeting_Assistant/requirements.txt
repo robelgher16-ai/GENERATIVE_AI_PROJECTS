@@ -1,20 +1,20 @@
-
-streamlit
+# --- API ---
+fastapi
+uvicorn[standard]
+python-multipart
 python-dotenv
-yt-dlp>=2026.10.21
+requests
+# --- pipeline (same libraries your project already uses) ---
+google-genai
+faster-whisper
+yt-dlp
 opencv-python-headless
 pytesseract
-Pillow
-openai-whisper
-faster-whisper>=1.2.1,<2.0.0
-google-genai
-fastapi
-uvicorn
-python-multipart
-langchain
+pillow
+pydub
 langchain-core
 langchain-community
-langchain-text-splitters
 langchain-chroma
+langchain-text-splitters
 chromadb
 fastembed

@@ -1,269 +1,235 @@
-
+"""
+FastAPI backend for the Ethiopian AI Meeting Assistant.
+Run locally:  uvicorn api:app --reload --port 8000
+Docs (auto):  http://localhost:8000/docs
+"""
 import os
 import sys
 import shutil
+import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
-# Resolve project paths independently of the current working directory.
 PROJECT_ROOT = Path(__file__).resolve().parent
-DOWNLOADS_DIR = PROJECT_ROOT / "downloads"
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
-
-DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-
 os.chdir(PROJECT_ROOT)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Load .env locally if python-dotenv is installed.
 try:
     from dotenv import load_dotenv
     load_dotenv(PROJECT_ROOT / ".env")
 except ImportError:
     pass
 
-# Configure Tesseract for both local Windows and Render/Linux environments.
-# On Render, install tesseract-ocr in the Docker image.
-try:
-    import pytesseract
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-    tesseract_env = os.environ.get("TESSERACT_CMD")
-    tesseract_path = tesseract_env or shutil.which("tesseract")
-    if tesseract_path:
-        pytesseract.pytesseract.tesseract_cmd = tesseract_path
-except ImportError:
-    pytesseract = None
-
-from core.transcriber import transcribe_audio
-from core.video_processor import process_video_input, initialize_ocr
-from core.summarizer import load_multimodal_inputs, generate_bilingual_reports
-from rag.ingest_db import run_ingestion
-from rag.chat_rag import answer_question, knowledge_base_ready
+OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+DOWNLOADS_DIR = PROJECT_ROOT / "downloads"
+EN_FILE = OUTPUTS_DIR / "meeting_notes_en.md"
+AMH_FILE = OUTPUTS_DIR / "meeting_notes_amh.md"
+TRANSCRIPT_FILE = OUTPUTS_DIR / "transcript.txt"
+VISUAL_FILE = OUTPUTS_DIR / "visual.txt"
+CHROMA_DIR = OUTPUTS_DIR / "chroma_db"
+for d in (OUTPUTS_DIR, DOWNLOADS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title="Ethiopian AI Meeting Assistant API",
-    description=(
-        "API for audio transcription, video OCR, bilingual meeting reports, "
-        "knowledge-base ingestion, and meeting Q&A in English and Amharic."
-    ),
+    description="Transcribe a meeting, generate English + Amharic reports, and chat with it (RAG).",
     version="1.0.0",
 )
-
-# For production, set FRONTEND_ORIGIN to your deployed Streamlit URL.
-frontend_origin = os.environ.get("FRONTEND_ORIGIN", "*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in frontend_origin.split(",") if origin.strip()],
-    allow_credentials=False if frontend_origin == "*" else True,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-class SourceRequest(BaseModel):
-    source: str = Field(..., min_length=1, description="A public URL or a file path available to the API server")
+# ---------------------------------------------------------------- security
+def check_api_key(x_api_key: Optional[str] = Header(default=None)):
+    """If APP_API_KEY is set on the server, every protected call must send it
+    in the 'X-API-Key' header. If it is not set, the API is open (fine for local tests)."""
+    required = os.environ.get("APP_API_KEY")
+    if required and x_api_key != required:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header.")
+
+
+# ---------------------------------------------------------------- job state
+# The pipeline works on ONE meeting at a time (it shares the outputs/ folder),
+# so we keep a single lock and a small in-memory job table.
+JOBS: dict = {}
+PIPELINE_LOCK = threading.Lock()
+
+
+def _set(job_id: str, **kw):
+    JOBS[job_id].update(kw, updated_at=time.time())
+
+
+def _run_pipeline(job_id: str, source: str, skip_visual: bool):
+    if not PIPELINE_LOCK.acquire(blocking=False):
+        _set(job_id, status="failed", error="Another analysis is already running. Try again later.")
+        return
+    try:
+        for f in (TRANSCRIPT_FILE, VISUAL_FILE, EN_FILE, AMH_FILE):
+            f.unlink(missing_ok=True)
+
+        _set(job_id, status="running", step="1/4 Audio transcription")
+        from core.transcriber import transcribe_audio
+        transcribe_audio(source)
+
+        if not skip_visual:
+            _set(job_id, step="2/4 Visual text extraction")
+            try:
+                from core.video_processor import process_video_input
+                process_video_input(source)
+            except Exception as e:  # visual step is optional (same as app.py)
+                _set(job_id, warning=f"Visual step skipped: {e}")
+
+        _set(job_id, step="3/4 Bilingual reports")
+        from core.summarizer import load_multimodal_inputs, generate_bilingual_reports
+        en, amh = generate_bilingual_reports(load_multimodal_inputs())
+        EN_FILE.write_text(en, encoding="utf-8")
+        AMH_FILE.write_text(amh, encoding="utf-8")
+
+        _set(job_id, step="4/4 Knowledge base")
+        from rag.ingest_db import run_ingestion
+        run_ingestion()
+
+        _set(job_id, status="done", step="finished")
+    except Exception as e:
+        _set(job_id, status="failed", error=str(e)[:500])
+    finally:
+        PIPELINE_LOCK.release()
+
+
+def _new_job() -> str:
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"job_id": job_id, "status": "queued", "step": "waiting",
+                    "error": None, "warning": None,
+                    "created_at": time.time(), "updated_at": time.time()}
+    return job_id
+
+
+# ---------------------------------------------------------------- schemas
+class AnalyzeURL(BaseModel):
+    url: str
+    skip_visual: bool = False
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Question about processed meeting records")
-    k: int = Field(default=6, ge=1, le=20)
+    question: str
+    k: int = 6
 
 
-def _safe_upload_name(filename: Optional[str]) -> str:
-    """Keep only the basename to prevent path traversal from uploaded filenames."""
-    name = Path(filename or "upload.bin").name
-    return name.replace("/", "_").replace("\\", "_")
-
-
-def _save_upload(upload: UploadFile) -> Path:
-    name = _safe_upload_name(upload.filename)
-    destination = DOWNLOADS_DIR / name
-    # Avoid overwriting a previous upload with the same name.
-    if destination.exists():
-        destination = DOWNLOADS_DIR / f"{destination.stem}_{os.getpid()}{destination.suffix}"
-    with destination.open("wb") as output:
-        shutil.copyfileobj(upload.file, output)
-    return destination
-
-
-@app.on_event("startup")
-def startup_checks():
-    """Initialize OCR when possible; don't prevent API startup if OCR is unavailable."""
-    try:
-        initialize_ocr()
-    except Exception as exc:
-        print(f"OCR initialization warning: {exc}", flush=True)
-
-
-@app.get("/")
+# ---------------------------------------------------------------- endpoints
+@app.get("/", tags=["system"])
 def root():
-    return {
-        "message": "Ethiopian AI Meeting Assistant API is running.",
-        "docs": "/docs",
-        "health": "/health",
-    }
+    return {"name": app.title, "docs": "/docs", "health": "/health"}
 
 
-@app.get("/health")
+@app.get("/health", tags=["system"])
 def health():
     return {
         "status": "ok",
-        "project": "Ethiopian AI Meeting Assistant",
-        "gemini_api_key_configured": bool(os.environ.get("GEMINI_API_KEY")),
-        "knowledge_base_ready": knowledge_base_ready(),
-        "tesseract_available": bool(shutil.which("tesseract") or os.environ.get("TESSERACT_CMD")),
+        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY")),
+        "api_key_protection": bool(os.environ.get("APP_API_KEY")),
+        "busy": PIPELINE_LOCK.locked(),
+        "knowledge_base_ready": CHROMA_DIR.exists() and any(CHROMA_DIR.iterdir()),
     }
 
 
-@app.post("/transcribe")
-def transcribe(request: SourceRequest):
-    """Transcribe a URL or a file path that exists on the API server."""
+@app.post("/analyze/url", tags=["pipeline"], dependencies=[Depends(check_api_key)])
+def analyze_url(body: AnalyzeURL, background: BackgroundTasks):
+    """Start a full analysis from a YouTube / video URL. Returns a job_id to poll."""
+    if not body.url.startswith(("http://", "https://")):
+        raise HTTPException(400, "url must start with http:// or https://")
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(500, "GEMINI_API_KEY is not set on the server.")
+    if PIPELINE_LOCK.locked():
+        raise HTTPException(409, "Another analysis is already running.")
+    job_id = _new_job()
+    background.add_task(_run_pipeline, job_id, body.url, body.skip_visual)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/analyze/upload", tags=["pipeline"], dependencies=[Depends(check_api_key)])
+def analyze_upload(background: BackgroundTasks,
+                   file: UploadFile = File(...),
+                   skip_visual: bool = Form(False)):
+    """Start a full analysis from an uploaded audio/video file."""
+    allowed = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".mp3", ".wav", ".m4a"}
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in allowed:
+        raise HTTPException(400, f"Unsupported file type '{ext}'. Allowed: {sorted(allowed)}")
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(500, "GEMINI_API_KEY is not set on the server.")
+    if PIPELINE_LOCK.locked():
+        raise HTTPException(409, "Another analysis is already running.")
+    saved = DOWNLOADS_DIR / Path(file.filename).name
+    with open(saved, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+    # audio-only files have no slides -> skip visual step automatically
+    audio_only = ext in {".mp3", ".wav", ".m4a"}
+    job_id = _new_job()
+    background.add_task(_run_pipeline, job_id, str(saved), skip_visual or audio_only)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/jobs/{job_id}", tags=["pipeline"], dependencies=[Depends(check_api_key)])
+def job_status(job_id: str):
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Unknown job_id (the server may have restarted).")
+    return job
+
+
+def _read(path: Path, what: str) -> str:
+    if not path.exists() or not path.read_text(encoding="utf-8").strip():
+        raise HTTPException(404, f"{what} not available yet. Run /analyze first.")
+    return path.read_text(encoding="utf-8")
+
+
+@app.get("/reports/en", tags=["results"], dependencies=[Depends(check_api_key)])
+def report_en():
+    return {"language": "en", "markdown": _read(EN_FILE, "English report")}
+
+
+@app.get("/reports/amh", tags=["results"], dependencies=[Depends(check_api_key)])
+def report_amh():
+    return {"language": "am", "markdown": _read(AMH_FILE, "Amharic report")}
+
+
+@app.get("/transcript", tags=["results"], dependencies=[Depends(check_api_key)])
+def transcript():
+    return {"transcript": _read(TRANSCRIPT_FILE, "Transcript"),
+            "visual_text": VISUAL_FILE.read_text(encoding="utf-8") if VISUAL_FILE.exists() else ""}
+
+
+@app.post("/chat", tags=["chat"], dependencies=[Depends(check_api_key)])
+def chat(body: ChatRequest):
+    """Ask a question (English or Amharic) about the analysed meeting."""
+    if not body.question.strip():
+        raise HTTPException(400, "question is empty")
+    from rag.chat_rag import answer_question
+    answer, docs = answer_question(body.question, k=body.k, return_sources=True)
+    sources = [{"source": d.metadata.get("source", "meeting record"),
+                "text": d.page_content[:400]} for d in docs]
+    return {"question": body.question, "answer": answer, "sources": sources}
+
+
+@app.post("/knowledge-base/rebuild", tags=["pipeline"], dependencies=[Depends(check_api_key)])
+def rebuild_kb():
+    """Re-index the existing reports without redoing transcription."""
+    if PIPELINE_LOCK.locked():
+        raise HTTPException(409, "Another analysis is running.")
+    from rag.ingest_db import run_ingestion
     try:
-        result_path = transcribe_audio(request.source.strip())
-        transcript_path = Path(result_path)
-        transcript_text = (
-            transcript_path.read_text(encoding="utf-8")
-            if transcript_path.exists()
-            else None
-        )
-        return {
-            "status": "success",
-            "transcript_path": str(transcript_path),
-            "transcript": transcript_text,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
-
-
-@app.post("/transcribe-upload")
-def transcribe_upload(file: UploadFile = File(...)):
-    """Upload an audio file and transcribe it."""
-    saved_path = None
-    try:
-        saved_path = _save_upload(file)
-        result_path = transcribe_audio(str(saved_path))
-        transcript_path = Path(result_path)
-        transcript_text = (
-            transcript_path.read_text(encoding="utf-8")
-            if transcript_path.exists()
-            else None
-        )
-        return {
-            "status": "success",
-            "uploaded_file": saved_path.name,
-            "transcript_path": str(transcript_path),
-            "transcript": transcript_text,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Uploaded-audio transcription failed: {exc}") from exc
-    finally:
-        file.file.close()
-
-
-@app.post("/process-video")
-def process_video(request: SourceRequest):
-    """Download/process a public video URL or process a server-local video path."""
-    try:
-        output_path = process_video_input(request.source.strip())
-        output_file = Path(output_path)
-        text = output_file.read_text(encoding="utf-8") if output_file.exists() else None
-        return {
-            "status": "success",
-            "visual_text_path": str(output_file),
-            "visual_text": text,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Video processing failed: {exc}") from exc
-
-
-@app.post("/process-video-upload")
-def process_video_upload(file: UploadFile = File(...)):
-    """Upload a video file and extract on-screen text with OCR."""
-    try:
-        saved_path = _save_upload(file)
-        output_path = process_video_input(str(saved_path))
-        output_file = Path(output_path)
-        text = output_file.read_text(encoding="utf-8") if output_file.exists() else None
-        return {
-            "status": "success",
-            "uploaded_file": saved_path.name,
-            "visual_text_path": str(output_file),
-            "visual_text": text,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Uploaded-video processing failed: {exc}") from exc
-    finally:
-        file.file.close()
-
-
-@app.post("/generate-reports")
-def generate_reports():
-    """Generate English and Amharic reports from the current transcript/visual files."""
-    try:
-        meeting_data = load_multimodal_inputs()
-        if not meeting_data.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="No meeting transcript or visual text found. Process audio or video first.",
-            )
-
-        english_report, amharic_report = generate_bilingual_reports(meeting_data)
-        return {
-            "status": "success",
-            "english_report": english_report,
-            "amharic_report": amharic_report,
-            "english_report_path": str(OUTPUTS_DIR / "meeting_notes_en.md"),
-            "amharic_report_path": str(OUTPUTS_DIR / "meeting_notes_amh.md"),
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {exc}") from exc
-
-
-@app.post("/ingest")
-def ingest():
-    """Build/rebuild the ChromaDB knowledge base from generated meeting reports."""
-    try:
-        result = run_ingestion()
-        return {
-            "status": "success",
-            "message": "Knowledge-base ingestion finished.",
-            "result": str(result) if result is not None else None,
-            "knowledge_base_ready": knowledge_base_ready(),
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Knowledge-base ingestion failed: {exc}") from exc
-
-
-@app.post("/chat")
-def chat(request: ChatRequest):
-    """Answer a question using the indexed meeting records."""
-    try:
-        answer, docs = answer_question(
-            request.question.strip(),
-            k=request.k,
-            return_sources=True,
-        )
-        sources = [
-            {
-                "source": doc.metadata.get("source", "meeting record"),
-                "language": doc.metadata.get("language"),
-                "content": doc.page_content,
-            }
-            for doc in docs
-        ]
-        return {
-            "status": "success",
-            "question": request.question,
-            "answer": answer,
-            "sources": sources,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Chat request failed: {exc}") from exc
+        run_ingestion()
+    except Exception as e:
+        raise HTTPException(500, str(e)[:300])
+    return {"status": "rebuilt"}
