@@ -1,7 +1,7 @@
 
 streamlit
 faster-whisper>=1.2.1,<2.0.0
-yt-dlp
+yt-dlp[default]
 opencv-python-headless
 pytesseract
 Pillow
