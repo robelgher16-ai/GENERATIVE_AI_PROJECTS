@@ -1,4 +1,0 @@
-ffmpeg
-tesseract-ocr
-tesseract-ocr-eng
-tesseract-ocr-amh
