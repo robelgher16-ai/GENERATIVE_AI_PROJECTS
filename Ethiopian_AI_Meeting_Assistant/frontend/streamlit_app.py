@@ -43,7 +43,61 @@ with st.sidebar:
 tab_run, tab_en, tab_am, tab_chat = st.tabs(["🚀 Analyze", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"])
 
 with tab_run:
-    mode = st.radio("Input", ["YouTube / video link", "Upload file"], horizontal=True)
+    mode = st.radio(
+        "Input",
+        ["Upload file", "YouTube / video link"],
+        index=0,
+        horizontal=True,
+    )
+
+    skip_visual = st.checkbox(
+        "Skip slide-text (OCR) step — faster",
+        value=False,
+    )
+
+    job = None
+
+    if mode == "YouTube / video link":
+        st.info(
+            "YouTube link processing has been temporarily deactivated "
+            "due to YouTube access restrictions. Please upload your "
+            "meeting audio or video file instead."
+        )
+
+    else:
+        f = st.file_uploader(
+            "Meeting file",
+            type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"],
+        )
+
+        if st.button("Start analysis", type="primary") and f:
+            r = api(
+                "POST",
+                "/analyze/upload",
+                files={"file": (f.name, f.getvalue())},
+                data={"skip_visual": str(skip_visual).lower()},
+                timeout=600,
+            )
+            job = r.json() if r.ok else st.error(r.text)
+
+    if job and "job_id" in job:
+        box = st.empty()
+
+        while True:
+            j = api("GET", f"/jobs/{job['job_id']}").json()
+            box.info(f"**{j['status']}** — {j['step']}")
+
+            if j["status"] == "done":
+                box.success("Finished! Open the report tabs.")
+                break
+
+            if j["status"] == "failed":
+                box.error(j.get("error"))
+                break
+
+            time.sleep(8)
+
+
     skip_visual = st.checkbox("Skip slide-text (OCR) step — faster", value=False)
     job = None
     if mode == "YouTube / video link":
