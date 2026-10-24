@@ -28,8 +28,6 @@ st.markdown(
     "html,body,[class*='css']{font-family:'Noto Sans Ethiopic',sans-serif}"
     ".block-container{padding-top:2.2rem}"
     "div[data-testid='stVerticalBlock']{gap:0.6rem}"
-    ".fc{border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:.4rem .7rem;line-height:1.3;font-size:.82rem}"
-    ".fc b{font-size:.92rem}"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -68,6 +66,10 @@ st.session_state.setdefault("version", 0)
 st.session_state.setdefault("msgs", [])
 
 # ------------------------------------------------------------------ sidebar = navigation
+def go(feature):
+    st.session_state["page"] = feature      # opens that feature page (and highlights it in the sidebar)
+
+
 FEATURES = ["🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
 
 
@@ -152,10 +154,11 @@ def page_analyze():
     st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
 
     c1, c2, c3 = st.columns(3, gap="small")
-    c1.markdown("<div class='fc'><b>🇪🇹 የአማርኛ ሪፖርት</b><br>ሙሉ የስብሰባ ሪፖርት በአማርኛ — ማጠቃለያ፣ ውሳኔዎች እና ቀጣይ ተግባራት።</div>", unsafe_allow_html=True)
-    c2.markdown("<div class='fc'><b>🇬🇧 English Report</b><br>A full meeting report in English: summary, decisions and action items.</div>", unsafe_allow_html=True)
-    c3.markdown("<div class='fc'><b>💬 Chat / ውይይት</b><br>Ask questions about the meeting in English or Amharic and get answers with sources.</div>", unsafe_allow_html=True)
+    c1.button("🇪🇹 የአማርኛ ሪፖርት", key="open_am", on_click=go, args=(FEATURES[1],), use_container_width=True)
+    c2.button("🇬🇧 English Report", key="open_en", on_click=go, args=(FEATURES[0],), use_container_width=True)
+    c3.button("💬 Chat / ውይይት", key="open_chat", on_click=go, args=(FEATURES[2],), use_container_width=True)
 
+    st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)   # ~2 cm space before the upload title
     st.markdown("##### Upload a meeting")
     f = st.file_uploader("Meeting audio or video file",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
