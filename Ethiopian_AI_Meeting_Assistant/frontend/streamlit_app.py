@@ -66,23 +66,13 @@ st.session_state.setdefault("msgs", [])
 PAGES = ["🚀 Analyze a meeting", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
 
 with st.sidebar:
-    st.title("🎙️ Meeting Assistant")
+    st.markdown("### 🎙️ Ethiopian AI Meeting Assistant")
     page = st.radio("Menu", PAGES, label_visibility="collapsed")
-    st.divider()
-    try:
-        h = get_health()
-        st.success("API online")
-        st.write("Knowledge base:", "✅ ready" if h["knowledge_base_ready"] else "○ not built")
-    except Exception as e:
-        h = None
-        st.error("Cannot reach the API.")
-    if st.button("🔄 Refresh status", use_container_width=True):
-        get_health.clear()
-        st.rerun()
-    with st.expander("🛠️ Diagnostics"):
-        st.caption(f"API: {API_URL}")
-        st.caption(f"API key set in secrets: {'yes' if API_KEY else 'NO'}")
-        st.json(h if h else {"error": "no answer from /health"})
+
+try:
+    h = get_health()
+except Exception:
+    h = None
 
 if h is None:
     st.title("🎙️ Ethiopian AI Meeting Assistant")
@@ -93,6 +83,10 @@ if h is None:
         "- Open `<API_URL>/health` in a browser. If it fails there, the problem is the Render service "
         "(see its **Logs** tab: crashed or out of memory)."
     )
+    st.caption(f"API address in use: {API_URL}")
+    if st.button("🔄 Try again"):
+        get_health.clear()
+        st.rerun()
     st.stop()
 
 
