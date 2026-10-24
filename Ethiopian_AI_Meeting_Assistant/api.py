@@ -74,34 +74,50 @@ def _run_pipeline(job_id: str, source: str, skip_visual: bool):
     if not PIPELINE_LOCK.acquire(blocking=False):
         _set(job_id, status="failed", error="Another analysis is already running. Try again later.")
         return
+    timings: dict = {}
+    t_all = time.time()
+    t_step = [time.time(), None]          # [start time of current step, its name]
+
+    def step(name: str):
+        """Close the previous step (store its duration in seconds) and open a new one."""
+        now = time.time()
+        if t_step[1]:
+            timings[t_step[1]] = round(now - t_step[0], 1)
+        t_step[0], t_step[1] = now, name
+        _set(job_id, step=name, timings=dict(timings))
+
     try:
         for f in (TRANSCRIPT_FILE, VISUAL_FILE, EN_FILE, AMH_FILE):
             f.unlink(missing_ok=True)
+        _set(job_id, status="running")
 
-        _set(job_id, status="running", step="1/4 Audio transcription")
+        step("1/4 Audio transcription")
         from core.transcriber import transcribe_audio
         transcribe_audio(source)
 
         if not skip_visual:
-            _set(job_id, step="2/4 Visual text extraction")
+            step("2/4 Visual text extraction")
             try:
                 from core.video_processor import process_video_input
                 process_video_input(source)
             except Exception as e:  # visual step is optional (same as app.py)
                 _set(job_id, warning=f"Visual step skipped: {e}")
 
-        _set(job_id, step="3/4 Bilingual reports")
+        step("3/4 Bilingual reports")
         from core.summarizer import load_multimodal_inputs, generate_bilingual_reports
         en, amh = generate_bilingual_reports(load_multimodal_inputs())
         EN_FILE.write_text(en, encoding="utf-8")
         AMH_FILE.write_text(amh, encoding="utf-8")
 
-        _set(job_id, step="4/4 Knowledge base")
+        step("4/4 Knowledge base")
         from rag.ingest_db import run_ingestion
         run_ingestion()
 
-        _set(job_id, status="done", step="finished")
+        step("finished")
+        timings["TOTAL"] = round(time.time() - t_all, 1)
+        _set(job_id, status="done", step="finished", timings=timings)
     except Exception as e:
+        step("failed")
         _set(job_id, status="failed", error=str(e)[:500])
     finally:
         PIPELINE_LOCK.release()
@@ -110,7 +126,7 @@ def _run_pipeline(job_id: str, source: str, skip_visual: bool):
 def _new_job() -> str:
     job_id = uuid.uuid4().hex[:12]
     JOBS[job_id] = {"job_id": job_id, "status": "queued", "step": "waiting",
-                    "error": None, "warning": None,
+                    "error": None, "warning": None, "timings": {},
                     "created_at": time.time(), "updated_at": time.time()}
     return job_id
 
@@ -139,6 +155,7 @@ def health():
         "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY")),
         "api_key_protection": bool(os.environ.get("APP_API_KEY")),
         "busy": PIPELINE_LOCK.locked(),
+        "active_job": next((j["job_id"] for j in JOBS.values() if j["status"] in ("queued", "running")), None),
         "knowledge_base_ready": CHROMA_DIR.exists() and any(CHROMA_DIR.iterdir()),
     }
 
@@ -215,8 +232,17 @@ def chat(body: ChatRequest):
     """Ask a question (English or Amharic) about the analysed meeting."""
     if not body.question.strip():
         raise HTTPException(400, "question is empty")
-    from rag.chat_rag import answer_question
-    answer, docs = answer_question(body.question, k=body.k, return_sources=True)
+    if not (CHROMA_DIR.exists() and any(CHROMA_DIR.iterdir())):
+        # typical after a Render restart/redeploy: the temporary disk (and the knowledge base) was erased
+        if EN_FILE.exists() and EN_FILE.read_text(encoding="utf-8").strip():
+            raise HTTPException(409, "Knowledge base is missing. Call POST /knowledge-base/rebuild, then ask again.")
+        raise HTTPException(404, "No meeting analysed yet (or the server restarted and lost it). Upload the meeting again.")
+    try:
+        from rag.chat_rag import answer_question
+        answer, docs = answer_question(body.question, k=body.k, return_sources=True)
+    except Exception as e:
+        # always answer in JSON with the real reason, never a bare 'Internal Server Error'
+        raise HTTPException(500, f"Chat failed: {type(e).__name__}: {str(e)[:300]}")
     sources = [{"source": d.metadata.get("source", "meeting record"),
                 "text": d.page_content[:400]} for d in docs]
     return {"question": body.question, "answer": answer, "sources": sources}

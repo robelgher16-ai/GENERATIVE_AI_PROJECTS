@@ -1,7 +1,7 @@
 """
 Ethiopian AI Meeting Assistant - Streamlit frontend (talks to the FastAPI backend).
 Local:   streamlit run frontend/streamlit_app.py
-Cloud:   set secrets  API_URL = "https://your-api.onrender.com"   APP_API_KEY = "..."
+Cloud:   secrets  API_URL = "https://your-api.onrender.com"   APP_API_KEY = "..."
 """
 import os
 import time
@@ -30,59 +30,75 @@ st.markdown(
 )
 
 
+def err_text(r):
+    """Readable error from ANY response (JSON or not)."""
+    try:
+        return str(r.json().get("detail", r.text))[:300]
+    except Exception:
+        return f"HTTP {r.status_code} — {(r.text or 'empty response')[:200]}"
+
+
 def api(method, path, **kw):
     return requests.request(method, API_URL + path, headers=HEADERS,
                             timeout=kw.pop("timeout", 120), **kw)
 
 
-# ------------------------------------------------------------------ cached reads (fast)
-# Streamlit re-runs the whole script on every click/message. Caching stops it from
-# calling the server for health + both reports each time you chat.
-@st.cache_data(ttl=20, show_spinner=False)
+# ------------------------------------------------------------------ cached reads
+@st.cache_data(ttl=15, show_spinner=False)
 def get_health():
-    r = api("GET", "/health", timeout=60)   # long timeout: sleeping Render servers need ~50s to wake
+    r = api("GET", "/health", timeout=60)   # long timeout: a sleeping Render server needs ~50s to wake
     r.raise_for_status()
     return r.json()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_report(path, _version):
+def get_report(path, version):              # NOTE: no leading underscore, so a new `version` refreshes the cache
     r = api("GET", path)
-    return r.json()["markdown"] if r.ok else None
+    if not r.ok:
+        raise LookupError("no report")      # errors are never cached, so "no report yet" is re-checked next time
+    return r.json()["markdown"]
 
 
-st.session_state.setdefault("version", 0)    # bumped when a new analysis finishes -> refreshes reports
+st.session_state.setdefault("version", 0)
 st.session_state.setdefault("msgs", [])
 
-# ------------------------------------------------------------------ header + sidebar
-st.title("🎙️ Ethiopian AI Meeting Assistant")
-st.caption("Meeting video/audio → English + አማርኛ reports → chat with the meeting")
+# ------------------------------------------------------------------ sidebar = navigation
+PAGES = ["🚀 Analyze a meeting", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
 
 with st.sidebar:
-    st.header("Backend")
+    st.title("🎙️ Meeting Assistant")
+    page = st.radio("Menu", PAGES, label_visibility="collapsed")
+    st.divider()
     try:
         h = get_health()
         st.success("API online")
         st.write("Knowledge base:", "✅ ready" if h["knowledge_base_ready"] else "○ not built")
-        if st.button("🔄 Refresh status", use_container_width=True):
-            get_health.clear()
-            st.rerun()
     except Exception as e:
+        h = None
         st.error("Cannot reach the API.")
-        st.caption(f"{API_URL}\n\n{str(e)[:150]}")
-        if st.button("Try again", use_container_width=True):
-            get_health.clear()
-            st.rerun()
-        st.stop()
+    if st.button("🔄 Refresh status", use_container_width=True):
+        get_health.clear()
+        st.rerun()
+    with st.expander("🛠️ Diagnostics"):
+        st.caption(f"API: {API_URL}")
+        st.caption(f"API key set in secrets: {'yes' if API_KEY else 'NO'}")
+        st.json(h if h else {"error": "no answer from /health"})
 
-tab_run, tab_en, tab_am, tab_chat = st.tabs(
-    ["🚀 Analyze", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
-)
+if h is None:
+    st.title("🎙️ Ethiopian AI Meeting Assistant")
+    st.error("The backend API is not answering, so nothing can work yet.")
+    st.markdown(
+        "- On Render the free/low plan **sleeps** — wait ~1 minute and press **Refresh status**.\n"
+        "- Check the `API_URL` secret is exactly your Render address (no trailing path).\n"
+        "- Open `<API_URL>/health` in a browser. If it fails there, the problem is the Render service "
+        "(see its **Logs** tab: crashed or out of memory)."
+    )
+    st.stop()
 
 
-# ------------------------------------------------------------------ analyze
+# ------------------------------------------------------------------ job progress
 def watch_job(job_id, sig=None):
-    """Show live progress of a job. Works for a job you just started AND one already running on the server."""
+    """Live progress of a job - works for a job you just started or one already running on the server."""
     bar = st.progress(0.03, text="Queued...")
     steps = {"1/4": 0.15, "2/4": 0.45, "3/4": 0.75, "4/4": 0.92}
     t0 = time.time()
@@ -94,61 +110,60 @@ def watch_job(job_id, sig=None):
             return
         mins, secs = divmod(int(time.time() - t0), 60)
         if j["status"] == "done":
-            bar.progress(1.0, text=f"Finished ✅ ({mins}m {secs}s watched)")
-            st.session_state["version"] += 1          # refresh cached reports
-            st.session_state["msgs"] = []              # new meeting -> fresh chat
-            st.session_state["done_sig"] = sig         # blur the button for this file
+            bar.progress(1.0, text=f"Finished ✅ ({mins}m {secs}s)")
+            st.session_state["version"] += 1
+            st.session_state["msgs"] = []
+            st.session_state["done_sig"] = sig
             st.session_state["timings"] = j.get("timings", {})
             get_health.clear()
-            st.success("Finished! Open the report tabs or start chatting.")
+            st.success("Finished! Open the reports from the menu on the left, or start chatting.")
             if j.get("warning"):
                 st.caption(f"ℹ️ {j['warning']}")
             return
         if j["status"] == "failed":
             get_health.clear()
-            st.error(j.get("error") or "Analysis failed.")
+            st.error(f"Analysis failed: {j.get('error') or 'unknown error'}")
             return
-        bar.progress(steps.get(j["step"][:3], 0.05),
-                     text=f"{j['step']} — {mins}m {secs:02d}s elapsed")
+        bar.progress(steps.get(j["step"][:3], 0.05), text=f"{j['step']} — {mins}m {secs:02d}s elapsed")
         time.sleep(3)
 
 
-def run_analysis(file):
+def run_analysis(file, skip_visual):
     try:
-        r = api("POST", "/analyze/upload",
-                files={"file": (file.name, file.getvalue())},
+        r = api("POST", "/analyze/upload", files={"file": (file.name, file.getvalue())},
                 data={"skip_visual": str(skip_visual).lower()}, timeout=600)
     except requests.RequestException as e:
         st.error(f"Upload failed: {e}")
         return
     if r.status_code == 409:
         get_health.clear()
-        st.warning("The server is still busy with an earlier analysis. "
-                   "Click 'Watch running analysis' below to follow it, or wait for it to finish.")
+        st.warning("The server is still busy with an earlier analysis. Use 'Watch running analysis' or wait.")
         return
     if not r.ok:
-        st.error(f"Could not start analysis: {r.text}")
+        st.error(f"Could not start analysis — {err_text(r)}")
         return
     watch_job(r.json()["job_id"], (file.name, file.size))
 
 
-with tab_run:
-    st.subheader("Upload a meeting")
+# ------------------------------------------------------------------ pages
+def page_analyze():
+    st.title("🚀 Analyze a meeting")
+    st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
     f = st.file_uploader("Meeting audio or video file",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
     skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
 
     already_done = f is not None and st.session_state.get("done_sig") == (f.name, f.size)
-    # The button is blurred ONLY when there is no file, or this exact file is already analysed.
-    # (Server "busy" no longer blocks it - the server itself answers if it is busy.)
-    if st.button("🚀 Start analysis", type="primary", disabled=(f is None or already_done)):
-        run_analysis(f)
+    # Only blurred when THIS exact file was already analysed. With no file it stays clickable and explains itself.
+    if st.button("🚀 Start analysis", type="primary", disabled=already_done):
+        if f is None:
+            st.warning("Please upload a meeting file first (wait until the upload shows a green tick).")
+        else:
+            st.toast(f"Uploading {f.name} ({f.size/1_048_576:.1f} MB)...")
+            run_analysis(f, skip_visual)
     if already_done:
         st.caption("✅ This file is already analysed. Upload a different file to start again.")
-    elif f is None:
-        st.caption("Upload a file to enable the button.")
 
-    # An analysis is already running on the server (e.g. you refreshed the page): follow it here
     if h.get("active_job"):
         st.info("⏳ An analysis is currently running on the server.")
         if st.button("👀 Watch running analysis"):
@@ -161,30 +176,21 @@ with tab_run:
                 st.write(f"**{k}**: {v:.0f}s")
 
     st.divider()
-    # YouTube = visible placeholder only (disabled, not the default)
-    st.text_input("YouTube / video link", placeholder="Coming soon — please upload a file instead",
-                  disabled=True)
-    st.caption("🔒 YouTube links are turned off for now because YouTube blocks cloud servers.")
+    st.text_input("YouTube / video link (not active)", placeholder="Coming soon — please upload a file instead", disabled=True)
+    st.caption("🔒 This box is switched off on purpose (YouTube blocks cloud servers). It does not affect file upload.")
 
 
-# ------------------------------------------------------------------ reports
-def show_report(path, empty_msg):
-    md = get_report(path, st.session_state["version"])
-    if md is None:
+def page_report(title, path, empty_msg):
+    st.title(title)
+    try:
+        md = get_report(path, st.session_state["version"])
+    except Exception:
         st.info(empty_msg)
         return
-    st.download_button("⬇️ Download (.md)", md, file_name=path.split("/")[-1] + ".md",
-                       key=f"dl_{path}")
+    st.download_button("⬇️ Download (.md)", md, file_name=path.split("/")[-1] + ".md", key=f"dl_{path}")
     st.markdown(md)
 
 
-with tab_en:
-    show_report("/reports/en", "No report yet. Upload a meeting in the Analyze tab first.")
-with tab_am:
-    show_report("/reports/amh", "ሪፖርት የለም። መጀመሪያ በ Analyze ትር ስብሰባ ይጫኑ።")
-
-
-# ------------------------------------------------------------------ chat
 def body(m):
     st.markdown(m["content"])
     if m.get("sources"):
@@ -198,15 +204,16 @@ def render(m):
         body(m)
 
 
-with tab_chat:
+def page_chat():
+    st.title("💬 Chat / ውይይት")
     left, right = st.columns([5, 1])
     left.caption("Ask in English or Amharic. Answers come only from this meeting.")
     if right.button("🧹 Clear", use_container_width=True):
         st.session_state["msgs"] = []
         st.rerun()
 
-    chat_box = st.container(height=520, border=True)       # all messages live here (above)
-    q = st.chat_input("Ask a question / ጥያቄዎን ይጠይቁ...")  # input always underneath
+    chat_box = st.container(height=420, border=True)        # all messages (old + current) live here
+    q = st.chat_input("Ask a question / ጥያቄዎን ይጠይቁ...")   # input is always underneath
 
     with chat_box:
         if not st.session_state["msgs"] and not q:
@@ -221,12 +228,28 @@ with tab_chat:
                 with st.spinner("Thinking... / እያሰብኩ ነው..."):
                     try:
                         r = api("POST", "/chat", json={"question": q}, timeout=180)
-                        if r.ok:
-                            ans, srcs = r.json()["answer"], r.json().get("sources", [])
+                        try:
+                            data = r.json() if r.ok else None
+                        except ValueError:
+                            data = None
+                        if data and "answer" in data:
+                            ans, srcs = data["answer"], data.get("sources", [])
                         else:
-                            ans, srcs = f"❌ {r.json().get('detail', r.text)}", []
-                    except Exception as e:
-                        ans, srcs = f"❌ Could not reach the API: {e}", []
+                            ans, srcs = (f"❌ The server answered with an error — {err_text(r)}\n\n"
+                                         "If the server restarted, upload the meeting again (Render's disk is temporary)."), []
+                    except requests.RequestException as e:
+                        ans, srcs = f"❌ Could not reach the API (network/timeout): {e}", []
                 bot = {"role": "assistant", "content": ans, "sources": srcs}
-                body(bot)                      # answer fills the same bubble the spinner used
+                body(bot)
             st.session_state["msgs"].append(bot)
+
+
+# only the selected page runs -> faster than tabs (tabs run ALL pages on every click)
+if page == PAGES[0]:
+    page_analyze()
+elif page == PAGES[1]:
+    page_report("🇬🇧 English Report", "/reports/en", "No report yet. Upload a meeting in 'Analyze a meeting' first.")
+elif page == PAGES[2]:
+    page_report("🇪🇹 የአማርኛ ሪፖርት", "/reports/amh", "ሪፖርት የለም። መጀመሪያ 'Analyze a meeting' ውስጥ ስብሰባ ይጫኑ።")
+else:
+    page_chat()
