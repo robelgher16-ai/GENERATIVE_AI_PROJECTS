@@ -98,7 +98,6 @@ with tab_run:
             time.sleep(8)
 
 
-    skip_visual = st.checkbox("Skip slide-text (OCR) step — faster", value=False)
     job = None
     if mode == "YouTube / video link":
         url = st.text_input("Link", placeholder="https://www.youtube.com/watch?v=...")
