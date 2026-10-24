@@ -25,7 +25,12 @@ HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 st.markdown(
     "<style>@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;600&display=swap');"
-    "html,body,[class*='css']{font-family:'Noto Sans Ethiopic',sans-serif}</style>",
+    "html,body,[class*='css']{font-family:'Noto Sans Ethiopic',sans-serif}"
+    ".block-container{padding-top:2.2rem}"
+    "div[data-testid='stVerticalBlock']{gap:0.6rem}"
+    ".fc{border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:.4rem .7rem;line-height:1.3;font-size:.82rem}"
+    ".fc b{font-size:.92rem}"
+    "</style>",
     unsafe_allow_html=True,
 )
 
@@ -66,13 +71,8 @@ st.session_state.setdefault("msgs", [])
 FEATURES = ["🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
 
 
-def go(feature):
-    st.session_state["page"] = feature      # None = home page
-
-
 with st.sidebar:
     st.markdown("### 🎙️ Ethiopian AI Meeting Assistant")
-    st.button("🏠 Home", on_click=go, args=(None,), use_container_width=True)
     st.markdown("**Features**")
     page = st.radio("Features", FEATURES, index=None, key="page", label_visibility="collapsed")
 
@@ -151,25 +151,12 @@ def page_analyze():
     st.title("🎙️ Ethiopian AI Meeting Assistant")
     st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        with st.container(border=True):
-            st.markdown("#### 🇪🇹 የአማርኛ ሪፖርት")
-            st.write("ሙሉ የስብሰባ ሪፖርት በአማርኛ — ማጠቃለያ፣ ውሳኔዎች እና ቀጣይ ተግባራት።")
-            st.button("Open / ክፈት", key="open_am", on_click=go, args=(FEATURES[1],), use_container_width=True)
-    with c2:
-        with st.container(border=True):
-            st.markdown("#### 🇬🇧 English Report")
-            st.write("A full meeting report in English: summary, decisions and action items.")
-            st.button("Open", key="open_en", on_click=go, args=(FEATURES[0],), use_container_width=True)
-    with c3:
-        with st.container(border=True):
-            st.markdown("#### 💬 Chat / ውይይት")
-            st.write("Ask questions about the meeting in English or Amharic and get answers with sources.")
-            st.button("Open / ክፈት", key="open_chat", on_click=go, args=(FEATURES[2],), use_container_width=True)
+    c1, c2, c3 = st.columns(3, gap="small")
+    c1.markdown("<div class='fc'><b>🇪🇹 የአማርኛ ሪፖርት</b><br>ሙሉ የስብሰባ ሪፖርት በአማርኛ — ማጠቃለያ፣ ውሳኔዎች እና ቀጣይ ተግባራት።</div>", unsafe_allow_html=True)
+    c2.markdown("<div class='fc'><b>🇬🇧 English Report</b><br>A full meeting report in English: summary, decisions and action items.</div>", unsafe_allow_html=True)
+    c3.markdown("<div class='fc'><b>💬 Chat / ውይይት</b><br>Ask questions about the meeting in English or Amharic and get answers with sources.</div>", unsafe_allow_html=True)
 
-    st.divider()
-    st.subheader("Upload a meeting")
+    st.markdown("##### Upload a meeting")
     f = st.file_uploader("Meeting audio or video file",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
     skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
