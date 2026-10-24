@@ -1,170 +1,110 @@
-# Ethiopian AI Meeting Assistant
+# 🎙️ Ethiopian AI Meeting Assistant
 
-An AI-powered meeting analysis application that transforms meeting audio and video into searchable, bilingual meeting reports in **English and Amharic**. It combines speech transcription, visual text extraction, Gemini-powered report generation, and retrieval-augmented generation (RAG).
+Turn meeting audio or video into structured reports in **English and Amharic (አማርኛ)**, then ask questions about the meeting.
 
-## Live Applications
+## 🚀 Live Demo
 
-- **Render:** https://ethiopian-ai-meeting-assistant.onrender.com
-- **Streamlit Cloud:** https://ethiopian-ai-meeting-assistant.streamlit.app/
+- **Streamlit app:** https://ethiopian-ai-meeting-assistant.streamlit.app/
+- **FastAPI backend:** https://ethiopian-ai-meeting-assistant-api.onrender.com
+- **API documentation:** https://ethiopian-ai-meeting-assistant-api.onrender.com/docs
+- **API health check:** https://ethiopian-ai-meeting-assistant-api.onrender.com/health
 
-## Features
+## ⚠️ Important: Please Avoid YouTube Links
 
-- **Audio transcription:** Extract spoken content from meetings using Faster-Whisper.
-- **Video analysis:** Extract text from slides and video frames using OpenCV and Tesseract OCR.
-- **Bilingual reports:** Generate English and Amharic meeting notes using Google Gemini.
-- **AI meeting chat:** Ask questions about meeting content in English or Amharic.
-- **Retrieval-augmented generation:** Search meeting records using ChromaDB and FastEmbed.
-- **Downloadable reports:** Export generated meeting notes as Markdown files.
-- **Interactive dashboard:** Monitor pipeline progress and inspect transcripts, extracted text, reports, and chat sources.
+**Recommended: upload an audio or video file directly instead of pasting a YouTube link.**
 
-## Technology Stack
+YouTube may block automated downloads with messages such as “Sign in to confirm you’re not a bot.” This is a restriction from YouTube and can occur even when the application is configured correctly. As a result, YouTube-link processing is **not guaranteed to work**.
 
-| Component          | Technology                           |
-| ------------------ | ------------------------------------ |
-| User interface     | Streamlit                            |
-| API backend        | FastAPI                              |
-| Speech recognition | Faster-Whisper                       |
-| Video processing   | OpenCV                               |
-| OCR                | Tesseract OCR                        |
-| Generative AI      | Google Gemini                        |
-| Vector database    | ChromaDB                             |
-| Embeddings         | FastEmbed                            |
-| Language           | Python                               |
-| Deployment         | Render and Streamlit Community Cloud |
+For the most reliable experience:
 
-## Project Structure
+1. Obtain an audio/video file that you are allowed to use.
+2. Choose **Upload file** in the app.
+3. Upload the file and start the analysis.
 
-```text
-Ethiopian_AI_Meeting_Assistant/
-├── app.py                  # Streamlit user interface
-├── api.py                  # FastAPI backend
-├── core/
-│   ├── transcriber.py      # Audio transcription
-│   ├── video_processor.py  # Video analysis and OCR
-│   └── summarizer.py       # Bilingual report generation
-├── rag/
-│   ├── ingest_db.py        # Knowledge-base ingestion
-│   └── chat_rag.py         # Retrieval and question answering
-├── outputs/
-│   ├── transcript.txt
-│   ├── visual.txt
-│   ├── meeting_notes_en.md
-│   └── meeting_notes_amh.md
-├── downloads/              # Downloaded or uploaded media
-├── requirements.txt
-├── packages.txt
-├── Dockerfile
-├── .env.example
-└── README.md
-```
+Please do not repeatedly retry a YouTube link after a bot-verification error. Use the file-upload option instead. Do not provide browser cookies or passwords to the app.
 
-_The structure above describes the main application components; generated files and optional configuration files may not exist until created._
+## ✨ Features
 
-## Getting Started
+- 🎧 Process meeting audio and video files.
+- 📝 Generate an **English meeting report**.
+- 🇪🇹 Generate an **Amharic meeting report (የአማርኛ ሪፖርት)**.
+- 💬 Chat with the meeting and ask follow-up questions about its content.
+- 🖼️ Optional slide-text extraction using OCR; skip OCR when you want a faster run.
+- 🌐 Streamlit user interface backed by a FastAPI service.
 
-### 1. Clone the repository
+## 🧭 How to Use
 
-```bash
-git clone https://github.com/robelgher16-ai/GENERATIVE_AI_PROJECTS.git
-cd GENERATIVE_AI_PROJECTS/Ethiopian_AI_Meeting_Assistant
-```
+1. Open the [Ethiopian AI Meeting Assistant](https://ethiopian-ai-meeting-assistant.streamlit.app/).
+2. Upload an audio/video file. **File upload is recommended over YouTube links.**
+3. Choose whether to skip slide-text (OCR) extraction.
+4. Start the analysis and wait for processing to finish.
+5. Review the English report and Amharic report.
+6. Use the chat section to ask questions about the meeting.
 
-### 2. Create a virtual environment
+## 🏗️ Architecture
 
-```bash
-python -m venv .venv
-```
+- **Frontend:** Streamlit
+- **Backend:** FastAPI
+- **Speech transcription:** Whisper-based transcription components
+- **Language-model features:** Gemini API
+- **Retrieval and chat:** LangChain / vector-store components used by the project
+- **Optional visual text extraction:** OpenCV and Tesseract OCR
 
-Activate it on Windows PowerShell:
+The deployed frontend communicates with the backend API. The API also exposes interactive documentation at `/docs`.
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+## 🛠️ Local Development
 
-### 3. Install dependencies
+### Requirements
 
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+- Python version compatible with the project's pinned dependencies
+- FFmpeg and any system dependencies required by the audio/video processing packages
+- A Gemini API key
 
-Install the required system tools as well:
+### Configure environment variables
 
-- FFmpeg for media processing.
-- Tesseract OCR with English and Amharic language data.
+Create a local `.env` file based on the project's `.env.example` (if present) and add the required secret values. Keep `.env` out of version control.
 
-### 4. Configure the Gemini API key
+For the backend, configure the Gemini key in the backend service's environment. For deployment, set secrets in the hosting provider's environment-variable settings rather than hard-coding them into source files.
 
-Create a `.env` file in the project directory:
+### Run the backend
 
-```env
-GEMINI_API_KEY=your_gemini_api_key
-```
-
-Replace the placeholder with your own API key. Never commit `.env` or publish your API key.
-
-### 5. Run the Streamlit application
-
-```bash
-streamlit run app.py
-```
-
-Open the local URL printed in the terminal.
-
-### 6. Run the FastAPI backend
-
-In a separate terminal, activate the same environment and run:
+From the project directory, activate your virtual environment, install the backend requirements used by this project, then run:
 
 ```bash
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000/docs` to explore the API endpoints.
+If your local project uses a different ASGI module or a separate backend requirements file, use the module and requirements file configured for that checkout.
 
-## How It Works
+### Run the Streamlit frontend
 
-1. **Input:** Provide a YouTube URL or upload a supported audio or video file.
-2. **Transcription:** Convert speech into text with Faster-Whisper.
-3. **Visual extraction:** Analyze video frames and extract slide text using OCR.
-4. **Report generation:** Use Gemini to create English and Amharic meeting notes.
-5. **Knowledge-base ingestion:** Index meeting content in ChromaDB with FastEmbed.
-6. **Interactive Q&A:** Ask questions and receive answers grounded in the meeting records.
-7. **Export:** Read and download the generated reports.
+In a second terminal, set the API URL to your local backend and launch the Streamlit app. On Windows PowerShell:
 
-## Deployment
+```powershell
+$env:API_URL="http://localhost:8000"
+streamlit run app.py
+```
 
-The application can be deployed using Render or Streamlit Community Cloud.
+Use the actual Streamlit entry-point path if it differs in your checkout.
 
-- **Render:** Configure the service using the repository's Dockerfile and the appropriate application entry point.
-- **Streamlit Community Cloud:** Set the main file path to `Ethiopian_AI_Meeting_Assistant/app.py`.
+## 🔐 Security Notes
 
-Configure `GEMINI_API_KEY` through the hosting provider's environment variables or secrets settings. Install FFmpeg and Tesseract OCR wherever the processing pipeline runs.
+- Never commit `.env`, API keys, browser cookies, or other credentials.
+- Store deployment secrets in Render/Streamlit environment settings.
+- Treat uploaded meeting recordings and generated reports as potentially sensitive information.
+- Do not upload recordings unless you have permission to process them.
 
-If the Streamlit interface runs the processing modules directly, those dependencies must be available in the Streamlit deployment. A separately deployed FastAPI backend is needed only if the frontend is configured to call it.
+## ⚠️ Limitations
 
-## Security and Limitations
+- YouTube may refuse automated downloads; therefore, **direct file upload is the recommended input method**.
+- Transcription and generated reports may contain mistakes. Review important names, figures, decisions, and action items.
+- Processing speed depends on recording length, model availability, and hosting resources.
+- The hosted service may take time to wake up after inactivity.
 
-- Keep API keys and other secrets out of source control.
-- Large media files can require significant processing time and memory.
-- Transcription and OCR accuracy depend on audio quality, video resolution, language, and background noise.
-- Generated reports should be reviewed for accuracy before being used as official meeting records.
-- Persistent storage may be needed if generated reports and vector databases must survive hosting restarts.
+## 📌 Project
 
-## Future Improvements
+Part of the [`GENERATIVE_AI_PROJECTS`](https://github.com/robelgher16-ai/GENERATIVE_AI_PROJECTS) portfolio repository.
 
-- Add support for Tigrinya and additional Ethiopian languages.
-- Improve speaker identification and timestamped transcripts.
-- Export reports to PDF and Word.
-- Add user accounts and persistent meeting history.
-- Improve background processing for long recordings.
-- Expand the system with multilingual semantic search.
+---
 
-## Author
-
-**Robel Gebregziabher**
-
-AI Engineer | Generative AI | Machine Learning | Computer Vision
-
-## License
-
-Add a license that matches how you intend to distribute and reuse this project.
+Built to make meeting information easier to review in English and Amharic.
