@@ -63,8 +63,6 @@ with st.sidebar:
     try:
         h = get_health()
         st.success("API online")
-        st.write("Gemini key:", "✅" if h["gemini_key_set"] else "❌")
-        st.write("Busy:", "⏳ yes" if h["busy"] else "free")
         st.write("Knowledge base:", "✅ ready" if h["knowledge_base_ready"] else "○ not built")
         if st.button("🔄 Refresh status", use_container_width=True):
             get_health.clear()
@@ -83,6 +81,38 @@ tab_run, tab_en, tab_am, tab_chat = st.tabs(
 
 
 # ------------------------------------------------------------------ analyze
+def watch_job(job_id, sig=None):
+    """Show live progress of a job. Works for a job you just started AND one already running on the server."""
+    bar = st.progress(0.03, text="Queued...")
+    steps = {"1/4": 0.15, "2/4": 0.45, "3/4": 0.75, "4/4": 0.92}
+    t0 = time.time()
+    while True:
+        try:
+            j = api("GET", f"/jobs/{job_id}", timeout=60).json()
+        except Exception as e:
+            st.error(f"Lost connection while checking progress: {e}")
+            return
+        mins, secs = divmod(int(time.time() - t0), 60)
+        if j["status"] == "done":
+            bar.progress(1.0, text=f"Finished ✅ ({mins}m {secs}s watched)")
+            st.session_state["version"] += 1          # refresh cached reports
+            st.session_state["msgs"] = []              # new meeting -> fresh chat
+            st.session_state["done_sig"] = sig         # blur the button for this file
+            st.session_state["timings"] = j.get("timings", {})
+            get_health.clear()
+            st.success("Finished! Open the report tabs or start chatting.")
+            if j.get("warning"):
+                st.caption(f"ℹ️ {j['warning']}")
+            return
+        if j["status"] == "failed":
+            get_health.clear()
+            st.error(j.get("error") or "Analysis failed.")
+            return
+        bar.progress(steps.get(j["step"][:3], 0.05),
+                     text=f"{j['step']} — {mins}m {secs:02d}s elapsed")
+        time.sleep(3)
+
+
 def run_analysis(file):
     try:
         r = api("POST", "/analyze/upload",
@@ -91,47 +121,44 @@ def run_analysis(file):
     except requests.RequestException as e:
         st.error(f"Upload failed: {e}")
         return
+    if r.status_code == 409:
+        get_health.clear()
+        st.warning("The server is still busy with an earlier analysis. "
+                   "Click 'Watch running analysis' below to follow it, or wait for it to finish.")
+        return
     if not r.ok:
         st.error(f"Could not start analysis: {r.text}")
         return
-    job_id = r.json().get("job_id")
-    bar = st.progress(0, text="Queued...")
-    steps = {"1/4": 0.15, "2/4": 0.45, "3/4": 0.75, "4/4": 0.92}
-    while True:
-        try:
-            j = api("GET", f"/jobs/{job_id}", timeout=60).json()
-        except Exception as e:
-            st.error(f"Lost connection while checking progress: {e}")
-            return
-        if j["status"] == "done":
-            bar.progress(1.0, text="Finished ✅")
-            st.session_state["version"] += 1      # refresh cached reports
-            st.session_state["msgs"] = []          # new meeting -> fresh chat
-            get_health.clear()
-            st.success("Finished! Open the report tabs or start chatting.")
-            if j.get("warning"):
-                st.caption(f"ℹ️ {j['warning']}")
-            return
-        if j["status"] == "failed":
-            st.error(j.get("error") or "Analysis failed.")
-            return
-        bar.progress(steps.get(j["step"][:3], 0.05), text=f"{j['status']} — {j['step']}")
-        time.sleep(6)
+    watch_job(r.json()["job_id"], (file.name, file.size))
 
 
 with tab_run:
     st.subheader("Upload a meeting")
     f = st.file_uploader("Meeting audio or video file",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
-    skip_visual = st.checkbox("Skip slide-text (OCR) step — faster", value=False)
+    skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
 
-    if st.button("🚀 Start analysis", type="primary", disabled=h["busy"]):
-        if f is None:
-            st.warning("Please upload a meeting file first.")
-        else:
-            run_analysis(f)
-    if h["busy"]:
-        st.caption("⏳ Another analysis is running. Please wait for it to finish.")
+    already_done = f is not None and st.session_state.get("done_sig") == (f.name, f.size)
+    # The button is blurred ONLY when there is no file, or this exact file is already analysed.
+    # (Server "busy" no longer blocks it - the server itself answers if it is busy.)
+    if st.button("🚀 Start analysis", type="primary", disabled=(f is None or already_done)):
+        run_analysis(f)
+    if already_done:
+        st.caption("✅ This file is already analysed. Upload a different file to start again.")
+    elif f is None:
+        st.caption("Upload a file to enable the button.")
+
+    # An analysis is already running on the server (e.g. you refreshed the page): follow it here
+    if h.get("active_job"):
+        st.info("⏳ An analysis is currently running on the server.")
+        if st.button("👀 Watch running analysis"):
+            watch_job(h["active_job"])
+
+    t = st.session_state.get("timings")
+    if t:
+        with st.expander("⏱️ Where the time went (per step)"):
+            for k, v in t.items():
+                st.write(f"**{k}**: {v:.0f}s")
 
     st.divider()
     # YouTube = visible placeholder only (disabled, not the default)
