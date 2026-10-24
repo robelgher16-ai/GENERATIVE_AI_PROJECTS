@@ -150,14 +150,6 @@ def run_analysis(file, skip_visual):
 
 # ------------------------------------------------------------------ pages
 def page_analyze():
-    st.title("🎙️ Ethiopian AI Meeting Assistant")
-    st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
-
-    c1, c2, c3 = st.columns(3, gap="small")
-    c1.button("🇪🇹 የአማርኛ ሪፖርት", key="open_am", on_click=go, args=(FEATURES[1],), use_container_width=True)
-    c2.button("🇬🇧 English Report", key="open_en", on_click=go, args=(FEATURES[0],), use_container_width=True)
-    c3.button("💬 Chat / ውይይት", key="open_chat", on_click=go, args=(FEATURES[2],), use_container_width=True)
-
     st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)   # ~2 cm space before the upload title
     st.markdown("##### Upload a meeting")
     f = st.file_uploader("Meeting audio or video file",
@@ -192,7 +184,7 @@ def page_analyze():
 
 
 def page_report(title, path, empty_msg):
-    st.title(title)
+    st.subheader(title)
     try:
         md = get_report(path, st.session_state["version"])
     except Exception:
@@ -216,7 +208,7 @@ def render(m):
 
 
 def page_chat():
-    st.title("💬 Chat / ውይይት")
+    st.subheader("💬 Chat / ውይይት")
     left, right = st.columns([5, 1])
     left.caption("Ask in English or Amharic. Answers come only from this meeting.")
     if right.button("🧹 Clear", use_container_width=True):
@@ -255,12 +247,24 @@ def page_chat():
             st.session_state["msgs"].append(bot)
 
 
+# ------------------------------------------------------------------ fixed header (never moves)
+st.title("🎙️ Ethiopian AI Meeting Assistant")
+st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
+
+NAV = [("🚀 Analysis", None, "nav_home"),
+       ("🇪🇹 የአማርኛ ሪፖርት", FEATURES[1], "nav_am"),
+       ("🇬🇧 English Report", FEATURES[0], "nav_en"),
+       ("💬 Chat / ውይይት", FEATURES[2], "nav_chat")]
+for col, (label, target, key) in zip(st.columns(len(NAV), gap="small"), NAV):
+    col.button(label, key=key, on_click=go, args=(target,), use_container_width=True,
+               type="primary" if page == target else "secondary")
+
 # only the selected page runs -> faster than tabs (tabs run ALL pages on every click)
 if page is None:
     page_analyze()
 elif page == FEATURES[0]:
-    page_report("🇬🇧 English Report", "/reports/en", "No report yet. Upload a meeting on the Home page first.")
+    page_report("🇬🇧 English Report", "/reports/en", "No report yet. Open 🚀 Analysis and upload a meeting first.")
 elif page == FEATURES[1]:
-    page_report("🇪🇹 የአማርኛ ሪፖርት", "/reports/amh", "ሪፖርት የለም። መጀመሪያ በመነሻ ገጽ ስብሰባ ይጫኑ።")
+    page_report("🇪🇹 የአማርኛ ሪፖርት", "/reports/amh", "ሪፖርት የለም። መጀመሪያ በ 🚀 Analysis ስብሰባ ይጫኑ።")
 else:
     page_chat()
