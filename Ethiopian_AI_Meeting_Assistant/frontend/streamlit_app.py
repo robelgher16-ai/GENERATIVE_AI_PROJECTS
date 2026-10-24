@@ -63,11 +63,18 @@ st.session_state.setdefault("version", 0)
 st.session_state.setdefault("msgs", [])
 
 # ------------------------------------------------------------------ sidebar = navigation
-PAGES = ["🚀 Analyze a meeting", "🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
+FEATURES = ["🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
+
+
+def go(feature):
+    st.session_state["page"] = feature      # None = home page
+
 
 with st.sidebar:
     st.markdown("### 🎙️ Ethiopian AI Meeting Assistant")
-    page = st.radio("Menu", PAGES, label_visibility="collapsed")
+    st.button("🏠 Home", on_click=go, args=(None,), use_container_width=True)
+    st.markdown("**Features**")
+    page = st.radio("Features", FEATURES, index=None, key="page", label_visibility="collapsed")
 
 try:
     h = get_health()
@@ -141,8 +148,28 @@ def run_analysis(file, skip_visual):
 
 # ------------------------------------------------------------------ pages
 def page_analyze():
-    st.title("🚀 Analyze a meeting")
+    st.title("🎙️ Ethiopian AI Meeting Assistant")
     st.caption("Upload a meeting → English + አማርኛ reports → chat with it")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        with st.container(border=True):
+            st.markdown("#### 🇪🇹 የአማርኛ ሪፖርት")
+            st.write("ሙሉ የስብሰባ ሪፖርት በአማርኛ — ማጠቃለያ፣ ውሳኔዎች እና ቀጣይ ተግባራት።")
+            st.button("Open / ክፈት", key="open_am", on_click=go, args=(FEATURES[1],), use_container_width=True)
+    with c2:
+        with st.container(border=True):
+            st.markdown("#### 🇬🇧 English Report")
+            st.write("A full meeting report in English: summary, decisions and action items.")
+            st.button("Open", key="open_en", on_click=go, args=(FEATURES[0],), use_container_width=True)
+    with c3:
+        with st.container(border=True):
+            st.markdown("#### 💬 Chat / ውይይት")
+            st.write("Ask questions about the meeting in English or Amharic and get answers with sources.")
+            st.button("Open / ክፈት", key="open_chat", on_click=go, args=(FEATURES[2],), use_container_width=True)
+
+    st.divider()
+    st.subheader("Upload a meeting")
     f = st.file_uploader("Meeting audio or video file",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
     skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
@@ -239,11 +266,11 @@ def page_chat():
 
 
 # only the selected page runs -> faster than tabs (tabs run ALL pages on every click)
-if page == PAGES[0]:
+if page is None:
     page_analyze()
-elif page == PAGES[1]:
-    page_report("🇬🇧 English Report", "/reports/en", "No report yet. Upload a meeting in 'Analyze a meeting' first.")
-elif page == PAGES[2]:
-    page_report("🇪🇹 የአማርኛ ሪፖርት", "/reports/amh", "ሪፖርት የለም። መጀመሪያ 'Analyze a meeting' ውስጥ ስብሰባ ይጫኑ።")
+elif page == FEATURES[0]:
+    page_report("🇬🇧 English Report", "/reports/en", "No report yet. Upload a meeting on the Home page first.")
+elif page == FEATURES[1]:
+    page_report("🇪🇹 የአማርኛ ሪፖርት", "/reports/amh", "ሪፖርት የለም። መጀመሪያ በመነሻ ገጽ ስብሰባ ይጫኑ።")
 else:
     page_chat()
