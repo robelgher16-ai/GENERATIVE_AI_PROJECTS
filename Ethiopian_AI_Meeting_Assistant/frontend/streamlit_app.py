@@ -65,6 +65,8 @@ def get_report(path, version):              # NOTE: no leading underscore, so a 
 st.session_state.setdefault("version", 0)
 st.session_state.setdefault("msgs", [])
 st.session_state.setdefault("up_n", 0)
+st.session_state.setdefault("running", False)
+st.session_state.setdefault("need_file", False)
 
 # ------------------------------------------------------------------ sidebar = navigation
 def go(feature):
@@ -76,6 +78,8 @@ def refresh_all():
     st.session_state["msgs"] = []
     st.session_state["done_sig"] = None
     st.session_state["timings"] = None
+    st.session_state["running"] = False
+    st.session_state["need_file"] = False
     st.session_state["up_n"] += 1           # new uploader key -> the old file disappears
     st.session_state["version"] += 1        # reports are re-read from the server
     st.session_state["page"] = None         # back to the Analysis page
@@ -153,7 +157,6 @@ def run_analysis(file, skip_visual):
         return
     if r.status_code == 409:
         get_health.clear()
-        st.warning("The server is still busy with an earlier analysis. Use 'Watch running analysis' or wait.")
         return
     if not r.ok:
         st.error(f"Could not start analysis — {err_text(r)}")
@@ -162,6 +165,16 @@ def run_analysis(file, skip_visual):
 
 
 # ------------------------------------------------------------------ pages
+def start_clicked():
+    """Runs the moment the button is pressed (before the page redraws)."""
+    f = st.session_state.get(f"uploader_{st.session_state['up_n']}")
+    if f is None:
+        st.session_state["need_file"] = True        # nothing uploaded -> ask the user to upload
+    else:
+        st.session_state["need_file"] = False
+        st.session_state["running"] = True          # pressed (disabled) until the result is ready
+
+
 def page_analyze():
     st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)   # ~2 cm space before the upload title
     st.markdown("##### Upload a meeting")
@@ -169,19 +182,37 @@ def page_analyze():
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
     skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
 
+    running = st.session_state["running"]
     already_done = f is not None and st.session_state.get("done_sig") == (f.name, f.size)
-    # Only blurred when THIS exact file was already analysed. With no file it stays clickable and explains itself.
-    if st.button("🚀 Start analysis", type="primary", disabled=already_done):
-        if f is None:
-            st.warning("Please upload a meeting file first (wait until the upload shows a green tick).")
-        else:
+
+    # Red + clickable when nothing is uploaded (clicking asks for a file) and after upload.
+    # Pressed (disabled) while the analysis runs, and for a file that is already analysed.
+    btn_slot = st.empty()
+    btn_slot.button("🚀 Start analysis", key="start_btn", type="primary",
+                    disabled=running or already_done or bool(h.get("active_job")),
+                    on_click=start_clicked)
+
+    if st.session_state["need_file"]:
+        st.session_state["need_file"] = False
+        st.warning("Please upload a meeting file first (wait until the upload shows a green tick).")
+
+    if running and f is not None:
+        try:
             st.toast(f"Uploading {f.name} ({f.size/1_048_576:.1f} MB)...")
             run_analysis(f, skip_visual)
+        finally:
+            st.session_state["running"] = False
+        done_now = st.session_state.get("done_sig") == (f.name, f.size)
+        btn_slot.button("🚀 Start analysis", key="start_btn_after", type="primary",
+                        disabled=done_now, on_click=start_clicked)   # free again if it failed
+        already_done = done_now
+    elif running:
+        st.session_state["running"] = False
+
     if already_done:
         st.caption("✅ This file is already analysed. Upload a different file to start again.")
 
-    if h.get("active_job"):
-        st.info("⏳ An analysis is currently running on the server.")
+    if h.get("active_job") and not running:
         if st.button("👀 Watch running analysis"):
             watch_job(h["active_job"])
 
