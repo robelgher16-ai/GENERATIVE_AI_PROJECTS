@@ -64,10 +64,22 @@ def get_report(path, version):              # NOTE: no leading underscore, so a 
 
 st.session_state.setdefault("version", 0)
 st.session_state.setdefault("msgs", [])
+st.session_state.setdefault("up_n", 0)
 
 # ------------------------------------------------------------------ sidebar = navigation
 def go(feature):
     st.session_state["page"] = feature      # opens that feature page (and highlights it in the sidebar)
+
+
+def refresh_all():
+    """Start fresh for a NEW upload: clear chat, finished-state, timings and the uploaded file, go to Analysis."""
+    st.session_state["msgs"] = []
+    st.session_state["done_sig"] = None
+    st.session_state["timings"] = None
+    st.session_state["up_n"] += 1           # new uploader key -> the old file disappears
+    st.session_state["version"] += 1        # reports are re-read from the server
+    st.session_state["page"] = None         # back to the Analysis page
+    get_health.clear()
 
 
 FEATURES = ["🇬🇧 English Report", "🇪🇹 የአማርኛ ሪፖርት", "💬 Chat / ውይይት"]
@@ -77,6 +89,7 @@ with st.sidebar:
     st.markdown("### 🎙️ Ethiopian AI Meeting Assistant")
     st.markdown("**Features**")
     page = st.radio("Features", FEATURES, index=None, key="page", label_visibility="collapsed")
+    st.button("🔄 Refresh / አድስ", key="side_refresh", on_click=refresh_all, use_container_width=True)
 
 try:
     h = get_health()
@@ -152,7 +165,7 @@ def run_analysis(file, skip_visual):
 def page_analyze():
     st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)   # ~2 cm space before the upload title
     st.markdown("##### Upload a meeting")
-    f = st.file_uploader("Meeting audio or video file",
+    f = st.file_uploader("Meeting audio or video file", key=f"uploader_{st.session_state['up_n']}",
                          type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a"])
     skip_visual = st.checkbox("Skip slide-text (OCR) step — much faster", value=False)
 
